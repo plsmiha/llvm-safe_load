@@ -125,6 +125,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializeRISCVTarget() {
   initializeRISCVPostLegalizerCombinerPass(*PR);
   initializeMachineKCFILegacyPass(*PR);
   initializeRISCVDeadRegisterDefinitionsPass(*PR);
+  initializeRISCVSafeLoadPass(*PR);
   initializeRISCVLateBranchOptPass(*PR);
   initializeRISCVMakeCompressibleOptPass(*PR);
   initializeRISCVQCRelaxMarkingPass(*PR);
@@ -527,6 +528,10 @@ void RISCVPassConfig::addCodeGenPrepare() {
 
 bool RISCVPassConfig::addInstSelector() {
   addPass(createRISCVISelDag(getRISCVTargetMachine(), getOptLevel()));
+  //right after instruction selection - bc i need to get to LD/LB (ecc..) opcodes 
+  // to have what to transform into safe_ld (goal: each ld becomes safe_ld) 
+  //before ld we had ir
+  addPass(createRISCVSafeLoadPass());
 
   return false;
 }

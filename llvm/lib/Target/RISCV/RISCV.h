@@ -42,6 +42,10 @@ void initializeRISCVCodeGenPrepareLegacyPassPass(PassRegistry &);
 FunctionPass *createRISCVDeadRegisterDefinitionsPass();
 void initializeRISCVDeadRegisterDefinitionsPass(PassRegistry &);
 
+FunctionPass *createRISCVSafeLoadPass();
+void initializeRISCVSafeLoadPass(PassRegistry &); //bookkeeping 
+//register the pass's name/ID into the global PassRegistry table
+
 FunctionPass *createRISCVIndirectBranchTrackingPass();
 void initializeRISCVIndirectBranchTrackingPass(PassRegistry &);
 
