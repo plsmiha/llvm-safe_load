@@ -233,6 +233,8 @@ bool CodeGenTargetMachineImpl::addPassesToEmitFile(
     PassManagerBase &PM, raw_pwrite_stream &Out, raw_pwrite_stream *DwoOut,
     CodeGenFileType FileType, bool DisableVerify,
     MachineModuleInfoWrapperPass *MMIWP) {
+
+  // Step 1: addPassesToGenerateCode() decides the final instructions.    
   // Add common CodeGen passes.
   if (!MMIWP)
     MMIWP = new MachineModuleInfoWrapperPass(this);
@@ -241,6 +243,7 @@ bool CodeGenTargetMachineImpl::addPassesToEmitFile(
   if (!PassConfig)
     return true;
 
+  // Step 2: addAsmPrinter() just writes them to .s/.o, no more changes.  
   if (TargetPassConfig::willCompleteCodeGenPipeline()) {
     if (addAsmPrinter(PM, Out, DwoOut, FileType, MMIWP->getMMI().getContext()))
       return true;

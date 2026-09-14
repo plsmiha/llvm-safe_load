@@ -1314,6 +1314,8 @@ void TargetPassConfig::addMachinePasses() {
   PM->add(createStackFrameLayoutAnalysisPass());
 
   // Add passes that directly emit MI after all other MI passes.
+  //runs right before the instructions get written out (emitted), and it's positioned so 
+  // it runs strictly after every other pass that processes instructions has already finished.
   addPreEmitPass2();
 
   AddingMachinePasses = false;

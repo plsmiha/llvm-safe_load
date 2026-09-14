@@ -528,10 +528,6 @@ void RISCVPassConfig::addCodeGenPrepare() {
 
 bool RISCVPassConfig::addInstSelector() {
   addPass(createRISCVISelDag(getRISCVTargetMachine(), getOptLevel()));
-  //right after instruction selection - bc i need to get to LD/LB (ecc..) opcodes 
-  // to have what to transform into safe_ld (goal: each ld becomes safe_ld) 
-  //before ld we had ir
-  addPass(createRISCVSafeLoadPass());
 
   return false;
 }
@@ -623,6 +619,12 @@ void RISCVPassConfig::addPreEmitPass2() {
 
   if (EnableCFIInstrInserter)
     addPass(createCFIInstrInserter());
+
+  // as late as possible, right before emission
+  // earlier optimization has already run and nothing downstream (sotto di noi)can (es expand and) produce a
+  // load our pass never sees, and nothing upstream silently skips a SAFE_*
+  // opcode it doesn't recognize and doesnt optimize.
+  addPass(createRISCVSafeLoadPass());
 }
 
 void RISCVPassConfig::addMachineSSAOptimization() {

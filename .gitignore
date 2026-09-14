@@ -93,3 +93,15 @@ pythonenv*
 # Scratch test artifacts (not part of the LLVM tree); keep only .c sources.
 /tests/*
 !/tests/*.c
+
+# Scratch Q&A notes
+/SAFE_LOAD_QA.md
+
+# Scratch MIR
+/llvm/test/CodeGen/RISCV/riscv-safe-load.mir
+
+/tests/test_chain.c
+/tests/test_stack.c
+/tests/test_stack_indirect.c
+/tests/test_call.c
+/tests/Makefile.opt
