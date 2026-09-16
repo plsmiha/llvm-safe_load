@@ -145,23 +145,12 @@ static bool hardenLoadsOptimized(MachineFunction &MF) {
                      isRegSafe(SafeRegs, MO.getReg(), TRI);
             });
 
-        // not in slh    
+        // not in slh
         for (const MachineOperand &MO : MI.operands()) {
-          //- CALLS (calls aren't terminators -same bb)
-          if (MO.isRegMask()) { //is this particular operand a regmask
-            SmallVector<unsigned, 4> ToReset; // not allowed to change while iterating
-            for (unsigned R : SafeRegs)
-              if (MO.clobbersPhysReg(Register(R))) // asks the regmask operand if this register is in the clobber list
-                //clobbered means the previous value in a register is destroyed/overwritten - just coller saved
-              ToReset.push_back(R);
-            for (unsigned R : ToReset)
-              SafeRegs.reset(R);
-                                  // are u being written
-          } else if (MO.isReg() && MO.isDef() && MO.getReg().isPhysical()) {
-            //- WRITES to a register
-            //es add a0, a1, a2 — a0 is being written, a1 and a2 are being read
+          //- WRITES to a register
+          //es add a0, a1, a2 — a0 is being written, a1 and a2 are being read
+          if (MO.isReg() && MO.isDef() && MO.getReg().isPhysical())
             clearReg(SafeRegs, MO.getReg(), TRI);
-          }
         }
 
         //if any of the read operands is safe -> def is safe
