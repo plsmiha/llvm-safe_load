@@ -90,6 +90,13 @@ static bool isRegSafe(const SparseBitVector<> &SafeRegs, Register Reg, const Tar
   return false;
 }
 
+// sp, fp (if reserved as frame pointer), or a reg holding sp/fp + constant
+static bool isStackAddr(const SparseBitVector<> &StackRegs, Register Reg,
+                        bool HasFP, const TargetRegisterInfo *TRI) {
+  return Reg == RISCV::X2 || (HasFP && Reg == RISCV::X8) ||
+         isRegSafe(StackRegs, Reg, TRI);
+}
+
 // Optimised
 static bool hardenLoadsOptimized(MachineFunction &MF) {
   const RISCVInstrInfo *TII =MF.getSubtarget<RISCVSubtarget>().getInstrInfo();
@@ -103,6 +110,7 @@ static bool hardenLoadsOptimized(MachineFunction &MF) {
   for (MachineBasicBlock &MBB : MF) {
     // Reset per block
     SparseBitVector<> SafeRegs;
+    SparseBitVector<> StackRegs; // regs holding sp/fp + constant
 
     for (MachineInstr &MI : MBB) {
       unsigned SafeOpc = getSafeLoadOpcode(MI.getOpcode());
@@ -114,9 +122,10 @@ static bool hardenLoadsOptimized(MachineFunction &MF) {
 
         bool IsDependent = SkipDependentLoads && isRegSafe(SafeRegs, Base, TRI);
         bool IsConstStack = SkipStackConstLoads &&
-                            (Base == RISCV::X2 || (HasFP && Base == RISCV::X8));
+                            isStackAddr(StackRegs, Base, HasFP, TRI);
 
         clearReg(SafeRegs, Dst, TRI);
+        clearReg(StackRegs, Dst, TRI);
         if (!(IsDependent || IsConstStack)) {
           //not safe by dependency or stack
           MI.setDesc(TII->get(SafeOpc));
@@ -131,32 +140,42 @@ static bool hardenLoadsOptimized(MachineFunction &MF) {
       }
 
       // NOT LOADS
-      if (SkipDependentLoads) {
-        // all reg uses must be safe: one unchecked operand (e.g. arr[idx]) leaks
-        bool ResultSafe = !MI.isCall() &&
-            llvm::any_of(MI.operands(), [](const MachineOperand &MO) {
-              return MO.isReg() && MO.isUse() && MO.getReg().isPhysical();
-            }) &&
-            llvm::all_of(MI.operands(), [&](const MachineOperand &MO) {
-                                 //MI reads this reg
-              return !MO.isReg() || !MO.isUse() || !MO.getReg().isPhysical() ||
-                     isRegSafe(SafeRegs, MO.getReg(), TRI);
-            });
+      // addi from a stack address is still a stack address (offset > 2047)
+      bool DefIsStackAddr = SkipStackConstLoads &&
+                         MI.getOpcode() == RISCV::ADDI &&
+                         MI.getOperand(1).isReg() &&
+                         isStackAddr(StackRegs, MI.getOperand(1).getReg(),
+                                     HasFP, TRI);
 
-        // not in slh
-        for (const MachineOperand &MO : MI.operands()) {
-          //- WRITES to a register
-          //es add a0, a1, a2 — a0 is being written, a1 and a2 are being read
-          if (MO.isReg() && MO.isDef() && MO.getReg().isPhysical())
-            clearReg(SafeRegs, MO.getReg(), TRI);
+      // all reg uses must be safe: one unchecked operand (e.g. arr[idx]) leaks
+      bool DefIsDependentSafe = SkipDependentLoads && !MI.isCall() &&
+          llvm::any_of(MI.operands(), [](const MachineOperand &MO) {
+            return MO.isReg() && MO.isUse() && MO.getReg().isPhysical();
+          }) &&
+          llvm::all_of(MI.operands(), [&](const MachineOperand &MO) {
+                               //MI reads this reg
+            return !MO.isReg() || !MO.isUse() || !MO.getReg().isPhysical() ||
+                   isRegSafe(SafeRegs, MO.getReg(), TRI);
+          });
+
+      // not in slh
+      for (const MachineOperand &MO : MI.operands()) {
+        //- WRITES to a register
+        //es add a0, a1, a2 — a0 is being written, a1 and a2 are being read
+        if (MO.isReg() && MO.isDef() && MO.getReg().isPhysical()) {
+          clearReg(SafeRegs, MO.getReg(), TRI);
+          clearReg(StackRegs, MO.getReg(), TRI);
         }
-
-        //if all of the read operands are safe -> def is safe
-        if (ResultSafe)
-          for (const MachineOperand &MO : MI.operands())
-            if (MO.isReg() && MO.isDef() && MO.getReg().isPhysical())
-              SafeRegs.set(MO.getReg().id());
       }
+
+      if (DefIsStackAddr)
+        StackRegs.set(MI.getOperand(0).getReg().id());
+
+      //if all of the read operands are safe -> def is safe
+      if (DefIsDependentSafe)
+        for (const MachineOperand &MO : MI.operands())
+          if (MO.isReg() && MO.isDef() && MO.getReg().isPhysical())
+            SafeRegs.set(MO.getReg().id());
     }
   }
   return MadeChange;
