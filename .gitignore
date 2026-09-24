@@ -94,3 +94,7 @@ pythonenv*
 /tests/*
 !/tests/*.c
 
+
+# Scratch notes
+/important.md
+/RISCV_SAFE_LOAD_DEEP_DIVE.md

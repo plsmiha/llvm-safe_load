@@ -104,14 +104,6 @@ static bool hardenLoadsOptimized(MachineFunction &MF) {
     // Reset per block
     SparseBitVector<> SafeRegs;
 
-    //Stack optimization + Inheritance optimization:  sp/fp are implicitly safe,
-    //useful for more than 12 bit immidate but only wokrs when SkipDependentLoads
-    if (SkipStackConstLoads) {
-      SafeRegs.set(RISCV::X2);
-      if (HasFP)
-        SafeRegs.set(RISCV::X8);
-    }
-
     for (MachineInstr &MI : MBB) {
       unsigned SafeOpc = getSafeLoadOpcode(MI.getOpcode());
 
@@ -124,24 +116,30 @@ static bool hardenLoadsOptimized(MachineFunction &MF) {
         bool IsConstStack = SkipStackConstLoads &&
                             (Base == RISCV::X2 || (HasFP && Base == RISCV::X8));
 
+        clearReg(SafeRegs, Dst, TRI);
         if (!(IsDependent || IsConstStack)) {
-          //NAIVE or not inherently safe          
+          //not safe by dependency or stack
           MI.setDesc(TII->get(SafeOpc));
           MadeChange = true;
+          // from now dest is safe bc this ld is safe_ld
+          SafeRegs.set(Dst.id());
+        } else if (IsDependent) {
+          // stack destination is not safe
+          SafeRegs.set(Dst.id());
         }
-        // destination is safe from now on or inherently 
-        clearReg(SafeRegs, Dst, TRI);
-        SafeRegs.set(Dst.id());
         continue;
       }
 
-      // NOT LOADS 
-  
+      // NOT LOADS
       if (SkipDependentLoads) {
+        // all reg uses must be safe: one unchecked operand (e.g. arr[idx]) leaks
         bool ResultSafe = !MI.isCall() &&
-            llvm::any_of(MI.operands(), [&](const MachineOperand &MO) {
+            llvm::any_of(MI.operands(), [](const MachineOperand &MO) {
+              return MO.isReg() && MO.isUse() && MO.getReg().isPhysical();
+            }) &&
+            llvm::all_of(MI.operands(), [&](const MachineOperand &MO) {
                                  //MI reads this reg
-              return MO.isReg() && MO.isUse() && MO.getReg().isPhysical() &&
+              return !MO.isReg() || !MO.isUse() || !MO.getReg().isPhysical() ||
                      isRegSafe(SafeRegs, MO.getReg(), TRI);
             });
 
@@ -153,7 +151,7 @@ static bool hardenLoadsOptimized(MachineFunction &MF) {
             clearReg(SafeRegs, MO.getReg(), TRI);
         }
 
-        //if any of the read operands is safe -> def is safe
+        //if all of the read operands are safe -> def is safe
         if (ResultSafe)
           for (const MachineOperand &MO : MI.operands())
             if (MO.isReg() && MO.isDef() && MO.getReg().isPhysical())
