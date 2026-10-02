@@ -147,14 +147,15 @@ static bool hardenLoadsOptimized(MachineFunction &MF) {
                          isStackAddr(StackRegs, MI.getOperand(1).getReg(),
                                      HasFP, TRI);
 
-      // all reg uses must be safe: one unchecked operand (e.g. arr[idx]) leaks
+      // v 1.1 and v1 after call
+      if (MI.isCall())
+        SafeRegs.clear();
+
+  
       bool DefIsDependentSafe = SkipDependentLoads && !MI.isCall() &&
-          llvm::any_of(MI.operands(), [](const MachineOperand &MO) {
-            return MO.isReg() && MO.isUse() && MO.getReg().isPhysical();
-          }) &&
-          llvm::all_of(MI.operands(), [&](const MachineOperand &MO) {
+          llvm::any_of(MI.operands(), [&](const MachineOperand &MO) {
                                //MI reads this reg
-            return !MO.isReg() || !MO.isUse() || !MO.getReg().isPhysical() ||
+            return MO.isReg() && MO.isUse() && MO.getReg().isPhysical() &&
                    isRegSafe(SafeRegs, MO.getReg(), TRI);
           });
 
@@ -171,7 +172,7 @@ static bool hardenLoadsOptimized(MachineFunction &MF) {
       if (DefIsStackAddr)
         StackRegs.set(MI.getOperand(0).getReg().id());
 
-      //if all of the read operands are safe -> def is safe
+      //if any of the read operands is safe -> def is safe
       if (DefIsDependentSafe)
         for (const MachineOperand &MO : MI.operands())
           if (MO.isReg() && MO.isDef() && MO.getReg().isPhysical())
