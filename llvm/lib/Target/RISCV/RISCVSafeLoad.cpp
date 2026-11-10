@@ -192,12 +192,12 @@ static UnorderedInstrPtrSet selectLoadsDependent(MachineBasicBlock &MBB,
     }
 
     // NOT LOADS
-    // v 1.1 and v1 after call
-    if (MI.isCall())
+    // Reset at a call:
+    //  - anyof: always needs reset after a call
+    //  - allof: only needs reset after call when stack
+    if (MI.isCall() && (SkipDependentLoadsAnyOf || SkipStackConstLoads))
       SafeRegMap.clear();
 
-
-    // a call never makes its defs safe: SafeRegMap was just cleared above
     auto IsSafeUse = [&](const MachineOperand &MO) {
       return MO.isReg() && MO.isUse() && MO.getReg().isPhysical() &&
              isRegSafe(SafeRegMap, MO.getReg(), TRI);
@@ -206,7 +206,10 @@ static UnorderedInstrPtrSet selectLoadsDependent(MachineBasicBlock &MBB,
       return MO.isReg() && MO.isUse() && MO.getReg().isPhysical();
     };
     bool DefIsSafe;
-    if (SkipDependentLoadsAnyOf)
+    if (MI.isCall())
+      // anything written by a call is not depency safe anymore
+      DefIsSafe = false;
+    else if (SkipDependentLoadsAnyOf)
       // any_of: one safe input is enough
       DefIsSafe = llvm::any_of(MI.operands(), IsSafeUse);
     else if (SkipDependentLoadsAllOf)
@@ -299,5 +302,6 @@ bool RISCVSafeLoad::runOnMachineFunction(MachineFunction &MF) {
                           "-riscv-slh-opt-dependent-anyof, "
                           "-riscv-slh-opt-dependent-allof");
   if (SkipDependentLoadsAnyOf || SkipDependentLoadsAllOf)
-    return hardenLoads(MF, selectLoadsDependent);  return hardenLoads(MF, selectLoadsNaive);
+    return hardenLoads(MF, selectLoadsDependent);  
+    return hardenLoads(MF, selectLoadsNaive);
 }
